@@ -1,19 +1,20 @@
 from langchain_core.messages import HumanMessage, AIMessage
 from langgraph.graph import StateGraph, START, END
 from ..models.state import State
-from ..agents import InitiateChatAgent
+from ..agents import InitiateChatAgent, ReflectionAgent
 from .tool_executor import ToolExecutor
 from ..config.llm_config import LLMConfig
 from langgraph.prebuilt import tools_condition
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import Command
+from .reflector_condition import reflector_condition
 import json
 
 class Orchestrator:
     """Debate orchestrator following SRP - handles only debate flow orchestration"""
     
     def __init__(self, llm_config: LLMConfig, tool_executor: ToolExecutor, graph_config:dict):
-        self.llm, self.llm_with_tools = llm_config.create_llms()
+        self.llm, self.llm_with_tools, self.llm_with_human = llm_config.create_llms()
         
         # Initialize agents following DIP
         self.tools = llm_config.tools
@@ -25,6 +26,7 @@ class Orchestrator:
         self.nodes = {
             "initiate_chat": InitiateChatAgent(llm=self.llm_with_tools).execute,
             "tool_executor": tool_executor.execute,
+            "reflector": ReflectionAgent(llm=self.llm).execute
         }
         
         
@@ -38,12 +40,14 @@ class Orchestrator:
         # Add nodes
         graph_builder.add_node("initiate_chat", self.nodes["initiate_chat"])
         graph_builder.add_node("tools", self.nodes["tool_executor"])
+        graph_builder.add_node("reflector", self.nodes["reflector"])
 
         # Edges
         graph_builder.add_edge(START, "initiate_chat")
-        graph_builder.add_conditional_edges("initiate_chat", tools_condition)
+        graph_builder.add_conditional_edges("initiate_chat", tools_condition, {"tools":"tools", "__end__":"reflector"})
         graph_builder.add_edge("tools", "initiate_chat")
-        graph_builder.add_edge("initiate_chat", END)
+        
+        graph_builder.add_conditional_edges("reflector", reflector_condition, {"__end__":END, "initiate_chat":"initiate_chat"})
         
         return graph_builder.compile(checkpointer=self.memory,)
     

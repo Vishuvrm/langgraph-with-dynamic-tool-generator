@@ -11,7 +11,7 @@ class LLMConfig:
             generate_tool,
             run_terminal_commands_tool,
             get_raw_html_tool,
-            human_intervention_tool
+            # human_intervention_tool
         ]
         
     def create_llms(self):
@@ -20,4 +20,6 @@ class LLMConfig:
                 
         llm_with_tools = llm.bind_tools(tools=self.tools)
         
-        return llm, llm_with_tools
+        llm_with_human = llm.bind_tools(tools=[human_intervention_tool])
+        
+        return llm, llm_with_tools, llm_with_human
